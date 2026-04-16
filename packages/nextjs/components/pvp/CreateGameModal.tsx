@@ -67,6 +67,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
     ? `${customWager || "0"} CLAWD`
     : WAGER_PRESETS.find(p => p.value === wagerPreset)?.label;
 
+  // Known issue: Approval double-submit guard uses a single busy flag with no post-confirm cooldown. Practical risk is low since refetchAllowance is awaited before state clears.
   const handleApprove = async () => {
     if (!pvpAddress) return;
     setStep("approving");
@@ -163,6 +164,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
           </div>
         </div>
 
+        {/* Known issue: No USD value displayed next to CLAWD amounts — CLAWD's USD price source isn't stable enough to show paired dollar figures. */}
         <div className="text-xs opacity-70 mb-4">
           Your wager: <span className="font-mono">{wagerLabel}</span>. Pot:{" "}
           {useCustom

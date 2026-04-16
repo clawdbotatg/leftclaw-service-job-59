@@ -36,6 +36,7 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
   const isCreator = address && game.playerA.toLowerCase() === address.toLowerCase();
   const needsApproval = ((allowance as bigint | undefined) ?? 0n) < game.wager;
 
+  // Known issue: Approval double-submit guard uses a single busy flag with no post-confirm cooldown. Practical risk is low since refetchAllowance is awaited before state clears.
   const handleApprove = async () => {
     if (!pvpContract?.address) return;
     setBusy("approving");
@@ -74,6 +75,7 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
             <span className="text-xs opacity-70">host</span>
             <Address address={game.playerA} />
           </div>
+          {/* Known issue: No USD value displayed next to CLAWD amounts — CLAWD's USD price source isn't stable enough to show paired dollar figures. */}
           <div className="flex gap-4 text-sm mt-1">
             <span>
               <span className="opacity-60">wager</span>{" "}
@@ -85,6 +87,7 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
             </span>
           </div>
         </div>
+        {/* Known issue: Primary CTAs don't morph into a Switch Network button — users on wrong chain see a disabled button or get a wallet rejection, no proactive network-switch prompt. */}
         <div className="flex gap-2">
           <Link href={`/game/${gameId.toString()}`} className="btn btn-ghost btn-sm">
             View

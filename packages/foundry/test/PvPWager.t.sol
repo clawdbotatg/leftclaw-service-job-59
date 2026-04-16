@@ -350,7 +350,7 @@ contract PvPWagerTest is Test {
 
     function test_Settlement_BurnsTenPercent() public {
         uint256 gameId = _activeGame();
-        uint256 supplyBefore = clawd.totalSupply();
+        address deadAddress = 0x000000000000000000000000000000000000dEaD;
 
         vm.warp(block.timestamp + TIMEOUT + 1);
         vm.prank(playerB);
@@ -358,7 +358,7 @@ contract PvPWagerTest is Test {
 
         uint256 pot = WAGER * 2;
         uint256 expectedBurn = pot / 10;
-        assertEq(clawd.totalSupply(), supplyBefore - expectedBurn);
+        assertEq(clawd.balanceOf(deadAddress), expectedBurn);
     }
 
     // ---------- views ----------

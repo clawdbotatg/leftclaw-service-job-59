@@ -9,6 +9,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 contract MockCLAWD is ERC20 {
     constructor() ERC20("CLAWD Mock", "CLAWD") { }
 
+    /// @notice Known issue: Permissionless mint — any address can call this. Test-only contract; only deployed on non-Base chains. Not a production concern.
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }

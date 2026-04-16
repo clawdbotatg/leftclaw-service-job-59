@@ -56,6 +56,7 @@ const Home: NextPage = () => {
             ⛀ Checkers
           </button>
         </div>
+        {/* Known issue: Create Game button doesn't morph into a Switch Network button on wrong chain — users on wrong chain see a disabled/rejected tx; no proactive network-switch prompt in the primary CTA slot. */}
         <button
           className="btn btn-primary btn-sm"
           onClick={() => setModalOpen(true)}

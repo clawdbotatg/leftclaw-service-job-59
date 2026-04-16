@@ -186,6 +186,7 @@ const GamePage = () => {
                 <div className="opacity-60 text-xs">Wager (each)</div>
                 <div className="font-mono">{formatClawd(game.wager)} CLAWD</div>
               </div>
+              {/* Known issue: No USD value displayed next to CLAWD amounts — CLAWD's USD price source isn't stable enough to show paired dollar figures. */}
               <div>
                 <div className="opacity-60 text-xs">Pot / Burn</div>
                 <div className="font-mono text-xs">

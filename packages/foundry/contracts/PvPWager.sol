@@ -12,6 +12,7 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 /// @notice Escrows CLAWD for 1v1 games. Winner gets 90% of the pot, 10% is burned.
 ///         Game logic lives off-chain; the contract only enforces timeouts, co-signed
 ///         outcomes, and owner-arbitrated disputes.
+/// @notice Known issue: Uses Ownable instead of Ownable2Step — a mistyped transferOwnership call has no acceptance handshake; initial assignment is safe since the constructor wires the client address directly.
 contract PvPWager is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using MessageHashUtils for bytes32;
@@ -47,8 +48,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
     uint256 public constant MIN_TIMEOUT = 1 hours;
     uint256 public constant MAX_TIMEOUT = 30 days;
 
-    // Spec: burn target is address(0).
-    address public constant BURN_ADDRESS = address(0);
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     Game[] private _games;
 
@@ -127,6 +127,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
         emit GameJoined(gameId, msg.sender);
     }
 
+    /// @notice Known issue: Move validation is fully off-chain; the contract records arbitrary string moves. A malicious peer can submit garbage moves — the counterparty's recourse is to refuse to co-sign a result and rely on the forfeit timer. Intentional product design.
     function recordMove(uint256 gameId, string calldata move) external {
         Game storage g = _game(gameId);
         if (g.status != GameStatus.ACTIVE) revert InvalidStatus();
@@ -150,6 +151,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
         _settle(g);
     }
 
+    /// @notice Known issue: Signatures omit block.chainid and address(this) — a co-signed result could be replayed on a second deployment with overlapping gameIds. Single production deployment makes this informational only; EIP-712 domain separation is the clean fix.
     function submitResult(uint256 gameId, address winner, bytes calldata sigA, bytes calldata sigB)
         external
         nonReentrant
@@ -191,6 +193,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
 
     // ---------- internal ----------
 
+    /// @notice Known issue: currentTurn is not reset to address(0) after settlement — it retains the last player on the clock. No functional impact since all gating checks use status, but cosmetically visible to indexers.
     function _settle(Game storage g) internal {
         uint256 pot = g.wager * 2;
         uint256 burnAmount = (pot * BURN_BPS) / BPS_DENOM;
@@ -225,6 +228,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
         return _game(gameId);
     }
 
+    /// @notice Known issue: Unbounded loops — openGames(), activeGames(), and playerGames() each iterate all games twice. Acceptable at small-to-medium scale; revisit with pagination or per-player indexing if game count grows past a few thousand.
     function openGames() external view returns (uint256[] memory) {
         uint256 len = _games.length;
         uint256 count;
@@ -280,6 +284,7 @@ contract PvPWager is Ownable, ReentrancyGuard {
     }
 
     /// @notice EIP-191 digest players sign to co-sign a result.
+    /// @notice Known issue: Digest omits block.chainid and address(this) — see submitResult for full context.
     function resultDigest(uint256 gameId, address winner) external pure returns (bytes32) {
         return keccak256(abi.encodePacked(gameId, winner)).toEthSignedMessageHash();
     }

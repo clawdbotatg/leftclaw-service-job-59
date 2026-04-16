@@ -81,3 +81,17 @@ To know more about its features, check out our [website](https://scaffoldeth.io)
 We welcome contributions to Scaffold-ETH 2!
 
 Please see [CONTRIBUTING.MD](https://github.com/scaffold-eth/scaffold-eth-2/blob/main/CONTRIBUTING.md) for more information and guidelines for contributing to Scaffold-ETH 2.
+## Known Issues
+
+The following are accepted limitations of this build. They are annotated with `/// @notice Known issue:` / `// Known issue:` comments in the relevant source files.
+
+- **Unbounded loops in view functions** — `openGames()`, `activeGames()`, and `playerGames()` iterate all games twice. Acceptable at small-to-medium scale; revisit with pagination if game count grows past a few thousand.
+- **Ownable instead of Ownable2Step** — A mistyped `transferOwnership` call has no acceptance handshake. The initial owner (client wallet) is set correctly in the constructor; only a future ownership change carries risk.
+- **No USD value next to CLAWD amounts** — CLAWD's USD price source isn't stable enough to show reliable paired dollar figures. Raw CLAWD amounts are displayed everywhere.
+- **Primary CTAs don't switch network automatically** — The Create Game and Join/Cancel buttons disable when disconnected but don't surface a Switch Network prompt. Users on the wrong chain see a wallet rejection when the transaction fires.
+- **Approval double-submit guard has no post-confirm cooldown** — The busy-flag approach is adequate since `refetchAllowance` is awaited before the flag clears.
+- **Chess/Checkers move validation is off-chain** — The contract records arbitrary string moves; a malicious peer can submit garbage. Recourse is to refuse co-signing a result and rely on the forfeit timer. Intentional product design.
+- **Signatures are not chain- or contract-scoped** — The EIP-191 digest omits `block.chainid` and `address(this)`. A co-signed result could theoretically be replayed on a second deployment with overlapping game IDs. Single production deployment makes this informational only.
+- **`currentTurn` not reset after settlement** — Retains the last player on the clock after a game completes. No functional impact; purely cosmetic if an indexer reads the field.
+- **MockCLAWD has permissionless `mint`** — Test-only contract; only deployed on non-Base chains. Not a production concern.
+- **Footer shows ETH price pill** — Harmless SE-2 template holdover; displays native currency (ETH) price, not CLAWD.
