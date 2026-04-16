@@ -33,3 +33,43 @@
 - Must Fix: 2 items
 - Known Issues: 9 items
 - Audit frameworks followed: contract audit (ethskills), QA audit (ethskills)
+
+---
+
+# Audit Report — Cycle 2
+
+## MUST FIX
+
+None — all critical paths are secure. Both Cycle 1 MUST FIX items have been resolved: `BURN_ADDRESS` is now `0x000000000000000000000000000000000000dEaD` (`PvPWager.sol:51`) and `CLAWD` is registered in `externalContracts.ts` for chain 8453 with the full ERC20 ABI. All 31 Forge tests pass. Ownership is correctly set to the client address in the deploy script (`Deploy.s.sol:15,36`).
+
+## KNOWN ISSUES
+
+- **[LOW]** Primary CTAs don't morph into a Switch-Network button on wrong chain — `packages/nextjs/app/page.tsx:59-67`, `packages/nextjs/components/pvp/OpenGameRow.tsx:91-109` — "Create Game" and "Join" remain rendered when the wallet is on the wrong network. Users are handed off to RainbowKit's header dropdown or the wallet's own rejection dialog; wagmi will reject before the tx is broadcast so no silent failure occurs. QA skill flags this pattern as Critical; carry-over from Cycle 1 where it was assessed as low-risk and accepted. Fix: branch on `useChainId() === targetNetwork.id` and render a `useSwitchChain`-driven "Switch to Base" button in the primary CTA slot when mismatched.
+
+- **[LOW]** Approval single-flag guard missing post-confirm cooldown — `packages/nextjs/components/pvp/CreateGameModal.tsx:70-82`, `packages/nextjs/components/pvp/OpenGameRow.tsx:39-48` — The `step`/`busy` flag is set at the top of each handler and cleared in `finally {}`. SE-2's `writeContractAsync` waits for receipt before resolving, so the flag covers the critical window. A separate `approveCooldown` state (covering the time between receipt confirmation and `refetchAllowance` completing) is absent; practical risk is low because `refetchAllowance` is `await`ed before the flag clears. Acknowledged in code comments.
+
+- **[LOW]** Signatures omit chainid and contract address — `packages/foundry/contracts/PvPWager.sol:163,288` — `submitResult` verifies signatures over `keccak256(abi.encodePacked(gameId, winner))` with no `address(this)` or `block.chainid` in the hash. A signed result could theoretically be replayed on a second deployment with overlapping game IDs. Single production deployment makes this informational in practice. Fix: EIP-712 domain separation.
+
+- **[LOW]** `Ownable` not `Ownable2Step` — `packages/foundry/contracts/PvPWager.sol:16` — No two-step acceptance handshake on ownership transfers. A mistyped `transferOwnership` call is irreversible. Initial ownership is correctly set to the client address in the constructor; risk arises only on a future ownership change. Acknowledged in code comment.
+
+- **[LOW]** Unbounded loops in view functions — `packages/foundry/contracts/PvPWager.sol:232-284` — `openGames()`, `activeGames()`, `playerGames()` each iterate the full `_games` array twice. Off-chain reads only; no on-chain write path depends on them. Acceptable at current scale. Acknowledged in code comment.
+
+- **[LOW]** No USD value displayed next to CLAWD amounts — `packages/nextjs/components/pvp/CreateGameModal.tsx:167`, `packages/nextjs/components/pvp/OpenGameRow.tsx:78`, `packages/nextjs/app/game/[id]/page.tsx:189` — CLAWD has no stable on-chain USD price source. Acknowledged in code comments throughout; acceptable to ship with raw CLAWD figures.
+
+- **[INFO]** PvPWager contract address not surfaced in UI — `packages/nextjs/app/page.tsx`, `packages/nextjs/app/game/[id]/page.tsx` — Users escrow CLAWD into the contract but neither page displays the PvPWager address via `<Address/>`. QA skill flags missing contract address display as Important. Acceptable to ship; users can verify via wallet or block explorer.
+
+- **[INFO]** Default Alchemy API key fallback — `packages/nextjs/scaffold.config.ts:25` — Falls back to the SE-2 template key if `NEXT_PUBLIC_ALCHEMY_API_KEY` is not set in the hosting environment. The env var must be configured in Vercel (or equivalent) before launch.
+
+- **[INFO]** `currentTurn` not reset after settlement — `packages/foundry/contracts/PvPWager.sol:197` — Retains the last player on the clock after `COMPLETE`/`CANCELLED`. All access control gates on `status`; no functional impact. Cosmetic for indexers. Acknowledged in code comment.
+
+- **[INFO]** Frontend payout display uses different rounding than contract — `packages/nextjs/app/game/[id]/page.tsx:139` — UI computes `payout = (pot * 90n) / 100n`; contract computes `payout = pot - (pot * 1000 / 10000)`. For most practical CLAWD amounts (multiples of 10 in wei-space) results agree; for amounts whose wei value is not divisible by 100 there is a ≤1 wei display discrepancy. No funds are affected.
+
+- **[INFO]** MockCLAWD has permissionless `mint` — `packages/foundry/contracts/test/MockCLAWD.sol:13` — Test-only contract deployed exclusively on non-Base chains. Not a production concern.
+
+- **[INFO]** Footer shows native currency price pill — `packages/nextjs/components/Footer.tsx:24-30` — Displays ETH/native price, not CLAWD. Harmless SE-2 template holdover; acknowledged in code comment.
+
+## Summary
+
+- Must Fix: 0 items
+- Known Issues: 12 items
+- Audit frameworks followed: contract audit (ethskills — general, precision-math, access-control, signatures, ERC20, dos, chain-specific), QA audit (ethskills)
