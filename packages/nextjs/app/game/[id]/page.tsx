@@ -307,3 +307,7 @@ const GamePage = () => {
 };
 
 export default GamePage;
+
+export async function generateStaticParams() {
+  return [];
+}
