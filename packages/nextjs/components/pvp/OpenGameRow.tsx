@@ -3,19 +3,37 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Address } from "@scaffold-ui/components";
-import { useAccount } from "wagmi";
-import { useDeployedContractInfo, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useAccount, useSwitchChain } from "wagmi";
+import {
+  useDeployedContractInfo,
+  useScaffoldReadContract,
+  useScaffoldWriteContract,
+  useTargetNetwork,
+} from "~~/hooks/scaffold-eth";
 import { useGame } from "~~/hooks/usePvPGame";
 import { GameStatus, formatClawd, formatTimeout } from "~~/utils/pvp";
+import { notification } from "~~/utils/scaffold-eth";
+import { getParsedErrorWithAllAbis } from "~~/utils/scaffold-eth/contract";
 
 type Props = {
   gameId: bigint;
   filterType?: number;
 };
 
+const openMobileWallet = () => {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return;
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !(window as any).ethereum) {
+    setTimeout(() => window.open("metamask://", "_blank"), 2000);
+  }
+};
+
 export const OpenGameRow = ({ gameId, filterType }: Props) => {
   const { game } = useGame(gameId);
-  const { address } = useAccount();
+  const { address, chain } = useAccount();
+  const { targetNetwork } = useTargetNetwork();
+  const { switchChain } = useSwitchChain();
+  const isCorrectNetwork = chain?.id === targetNetwork.id;
+
   const { data: pvpContract } = useDeployedContractInfo({ contractName: "PvPWager" });
   const { data: allowance, refetch: refetchAllowance } = useScaffoldReadContract({
     contractName: "CLAWD",
@@ -28,41 +46,62 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
   });
   const { writeContractAsync: writeClawd } = useScaffoldWriteContract({ contractName: "CLAWD" });
   const { writeContractAsync: writePvP } = useScaffoldWriteContract({ contractName: "PvPWager" });
-  const [busy, setBusy] = useState<"idle" | "approving" | "joining" | "cancelling">("idle");
+  const [joining, setJoining] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [approveCooldown, setApproveCooldown] = useState(false);
 
   if (!game || game.status !== GameStatus.OPEN) return null;
   if (filterType !== undefined && game.gameType !== filterType) return null;
 
   const isCreator = address && game.playerA.toLowerCase() === address.toLowerCase();
   const needsApproval = ((allowance as bigint | undefined) ?? 0n) < game.wager;
+  const isApproveBusy = approvalSubmitting || approveCooldown;
+  const isAnyBusy = joining || cancelling || isApproveBusy;
 
-  // Known issue: Approval double-submit guard uses a single busy flag with no post-confirm cooldown. Practical risk is low since refetchAllowance is awaited before state clears.
   const handleApprove = async () => {
     if (!pvpContract?.address) return;
-    setBusy("approving");
+    setApprovalSubmitting(true);
     try {
-      await writeClawd({ functionName: "approve", args: [pvpContract.address, game.wager] });
+      const promise = writeClawd({ functionName: "approve", args: [pvpContract.address, game.wager] });
+      openMobileWallet();
+      await promise;
+      setApprovalSubmitting(false);
+      setApproveCooldown(true);
       await refetchAllowance();
-    } finally {
-      setBusy("idle");
+      setTimeout(() => setApproveCooldown(false), 4000);
+    } catch (e) {
+      setApprovalSubmitting(false);
+      const parsed = getParsedErrorWithAllAbis(e, targetNetwork.id as any);
+      notification.error(parsed);
     }
   };
 
   const handleJoin = async () => {
-    setBusy("joining");
+    setJoining(true);
     try {
-      await writePvP({ functionName: "joinGame", args: [gameId] });
+      const promise = writePvP({ functionName: "joinGame", args: [gameId] });
+      openMobileWallet();
+      await promise;
+    } catch (e) {
+      const parsed = getParsedErrorWithAllAbis(e, targetNetwork.id as any);
+      notification.error(parsed);
     } finally {
-      setBusy("idle");
+      setJoining(false);
     }
   };
 
   const handleCancel = async () => {
-    setBusy("cancelling");
+    setCancelling(true);
     try {
-      await writePvP({ functionName: "cancelGame", args: [gameId] });
+      const promise = writePvP({ functionName: "cancelGame", args: [gameId] });
+      openMobileWallet();
+      await promise;
+    } catch (e) {
+      const parsed = getParsedErrorWithAllAbis(e, targetNetwork.id as any);
+      notification.error(parsed);
     } finally {
-      setBusy("idle");
+      setCancelling(false);
     }
   };
 
@@ -75,7 +114,6 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
             <span className="text-xs opacity-70">host</span>
             <Address address={game.playerA} />
           </div>
-          {/* Known issue: No USD value displayed next to CLAWD amounts — CLAWD's USD price source isn't stable enough to show paired dollar figures. */}
           <div className="flex gap-4 text-sm mt-1">
             <span>
               <span className="opacity-60">wager</span>{" "}
@@ -87,24 +125,27 @@ export const OpenGameRow = ({ gameId, filterType }: Props) => {
             </span>
           </div>
         </div>
-        {/* Known issue: Primary CTAs don't morph into a Switch Network button — users on wrong chain see a disabled button or get a wallet rejection, no proactive network-switch prompt. */}
         <div className="flex gap-2">
           <Link href={`/game/${gameId.toString()}`} className="btn btn-ghost btn-sm">
             View
           </Link>
-          {isCreator ? (
-            <button className="btn btn-outline btn-sm" disabled={busy !== "idle"} onClick={handleCancel}>
-              {busy === "cancelling" && <span className="loading loading-spinner loading-xs" />}
+          {address && !isCorrectNetwork ? (
+            <button className="btn btn-warning btn-sm" onClick={() => switchChain({ chainId: targetNetwork.id })}>
+              Switch to {targetNetwork.name}
+            </button>
+          ) : isCreator ? (
+            <button className="btn btn-outline btn-sm" disabled={isAnyBusy} onClick={handleCancel}>
+              {cancelling && <span className="loading loading-spinner loading-xs" />}
               Cancel
             </button>
           ) : needsApproval ? (
-            <button className="btn btn-primary btn-sm" disabled={busy !== "idle" || !address} onClick={handleApprove}>
-              {busy === "approving" && <span className="loading loading-spinner loading-xs" />}
+            <button className="btn btn-primary btn-sm" disabled={isAnyBusy || !address} onClick={handleApprove}>
+              {(approvalSubmitting || approveCooldown) && <span className="loading loading-spinner loading-xs" />}
               Approve
             </button>
           ) : (
-            <button className="btn btn-primary btn-sm" disabled={busy !== "idle" || !address} onClick={handleJoin}>
-              {busy === "joining" && <span className="loading loading-spinner loading-xs" />}
+            <button className="btn btn-primary btn-sm" disabled={isAnyBusy || !address} onClick={handleJoin}>
+              {joining && <span className="loading loading-spinner loading-xs" />}
               Join
             </button>
           )}

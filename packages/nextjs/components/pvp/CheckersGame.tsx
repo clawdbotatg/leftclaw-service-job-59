@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { getParsedErrorWithAllAbis } from "~~/utils/scaffold-eth/contract";
 
 type Piece = { color: "light" | "dark"; king: boolean } | null;
 type Board = Piece[][]; // [row][col], row 0 is top (dark side by default)
@@ -78,6 +79,7 @@ export const CheckersGame = ({ gameId, moves, myColor, isMyTurn, disabled, onMov
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const { writeContractAsync: writePvP } = useScaffoldWriteContract({ contractName: "PvPWager" });
+  const { targetNetwork } = useTargetNetwork();
 
   const board = useMemo(() => {
     let b = initialBoard();
@@ -99,7 +101,7 @@ export const CheckersGame = ({ gameId, moves, myColor, isMyTurn, disabled, onMov
       await writePvP({ functionName: "recordMove", args: [gameId, notation] });
       onMoveSubmitted?.();
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "submit failed");
+      setErrorMsg(getParsedErrorWithAllAbis(e, targetNetwork.id as any));
     } finally {
       setPending(false);
       setSelected(null);

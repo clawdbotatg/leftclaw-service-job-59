@@ -354,38 +354,41 @@ export const getParsedErrorWithAllAbis = (error: any, chainId: AllowedChainIds):
     }
 
     try {
-      // Get all deployed contracts for the current chain
-      const chainContracts = deployedContractsData[chainId as keyof typeof deployedContractsData];
-
-      if (!chainContracts) {
-        return originalParsedError;
-      }
-
-      // Build a lookup table of error signatures to error names
+      // Build a lookup table of error signatures to error names from all contracts
       const errorLookup: Record<string, { name: string; contract: string; signature: string }> = {};
 
-      Object.entries(chainContracts).forEach(([contractName, contract]: [string, any]) => {
-        if (contract.abi) {
-          contract.abi.forEach((item: any) => {
-            if (item.type === "error") {
-              // Create the proper error signature like Solidity does
-              const errorName = item.name;
-              const inputs = item.inputs || [];
-              const inputTypes = inputs.map((input: any) => input.type).join(",");
-              const errorSignature = `${errorName}(${inputTypes})`;
+      const indexAbiErrors = (contractName: string, abi: readonly any[] | undefined) => {
+        if (!abi) return;
+        abi.forEach((item: any) => {
+          if (item.type === "error") {
+            const errorName = item.name;
+            const inputs = item.inputs || [];
+            const inputTypes = inputs.map((input: any) => input.type).join(",");
+            const errorSignature = `${errorName}(${inputTypes})`;
+            const hash = keccak256(toHex(errorSignature));
+            const errorSelector = hash.slice(0, 10);
+            errorLookup[errorSelector] = {
+              name: errorName,
+              contract: contractName,
+              signature: errorSignature,
+            };
+          }
+        });
+      };
 
-              // Hash the signature and take the first 4 bytes (8 hex chars)
-              const hash = keccak256(toHex(errorSignature));
-              const errorSelector = hash.slice(0, 10); // 0x + 8 chars = 10 total
+      // Index errors from deployed contracts on the current chain
+      const deployedChainContracts = deployedContractsData[chainId as keyof typeof deployedContractsData];
+      if (deployedChainContracts) {
+        Object.entries(deployedChainContracts).forEach(([contractName, contract]: [string, any]) =>
+          indexAbiErrors(contractName, contract.abi),
+        );
+      }
 
-              errorLookup[errorSelector] = {
-                name: errorName,
-                contract: contractName,
-                signature: errorSignature,
-              };
-            }
-          });
-        }
+      // Index errors from external contracts (all chains, since user might be on any)
+      Object.values(externalContractsData).forEach((chainContracts: any) => {
+        Object.entries(chainContracts).forEach(([contractName, contract]: [string, any]) =>
+          indexAbiErrors(contractName, contract.abi),
+        );
       });
 
       // Check if we can find the error in our lookup

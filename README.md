@@ -1,97 +1,43 @@
-# 🏗 Scaffold-ETH 2
+# CLAWD Arena
 
-<h4 align="center">
-  <a href="https://docs.scaffoldeth.io">Documentation</a> |
-  <a href="https://scaffoldeth.io">Website</a>
-</h4>
+PvP Chess and Checkers wagered in CLAWD on Base — winner takes 90% of the pot, 10% is burned.
 
-🧪 An open-source, up-to-date toolkit for building decentralized applications (dapps) on the Ethereum blockchain. It's designed to make it easier for developers to create and deploy smart contracts and build user interfaces that interact with those contracts.
+## What it does
 
-> [!NOTE]
-> 🤖 Scaffold-ETH 2 is AI-ready! It has everything agents need to build on Ethereum. Check `.agents/`, `.claude/`, `.opencode` or `.cursor/` for more info.
+Two players each escrow an equal CLAWD wager into the on-chain `PvPWager` contract. They play chess or checkers off-chain (board state lives in the browser), recording each move on-chain so anyone can verify history and detect timeouts. When the game ends, both players co-sign the agreed winner; either side submits both signatures to release the pot. If a player disappears mid-game, the opponent can claim the forfeit after the per-move timeout elapses.
 
-⚙️ Built using NextJS, RainbowKit, Foundry, Wagmi, Viem, and Typescript.
+- 90% of the pot pays the winner
+- 10% is burned to `address(0)` on settle
+- Refunds in full if the host cancels before anyone joins
 
-- ✅ **Contract Hot Reload**: Your frontend auto-adapts to your smart contract as you edit it.
-- 🪝 **[Custom hooks](https://docs.scaffoldeth.io/hooks/)**: Collection of React hooks wrapper around [wagmi](https://wagmi.sh/) to simplify interactions with smart contracts with typescript autocompletion.
-- 🧱 [**Components**](https://docs.scaffoldeth.io/components/): Collection of common web3 components to quickly build your frontend.
-- 🔥 **Burner Wallet & Local Faucet**: Quickly test your application with a burner wallet and local faucet.
-- 🔐 **Integration with Wallet Providers**: Connect to different wallet providers and interact with the Ethereum network.
+## Contract
 
-![Debug Contracts tab](https://github.com/scaffold-eth/scaffold-eth-2/assets/55535804/b237af0c-5027-4849-a5c1-2e31495cccb1)
+| Network | Contract | Address |
+|---------|----------|---------|
+| Base mainnet | `PvPWager` | [`0xde0952553b6c4ef58307d6a8f8e9b62018c1211e`](https://basescan.org/address/0xde0952553b6c4ef58307d6a8f8e9b62018c1211e) |
+| Base mainnet | `CLAWD` (token) | [`0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07`](https://basescan.org/address/0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07) |
 
-## Requirements
+## How to play
 
-Before you begin, you need to install the following tools:
+1. **Connect** a wallet on Base, holding some CLAWD.
+2. **Create a game** — pick chess or checkers, set the wager and per-move timeout. You approve and escrow your wager when you create.
+3. **Wait for an opponent** to join. They approve and escrow the same wager.
+4. **Play** off-chain in the browser; every move is recorded on-chain via `recordMove`.
+5. **Settle** — both players co-sign the winner address (winning side or resignation), and either player submits both signatures via `submitResult`. The contract pays out 90% to the winner and burns 10%.
+6. **Forfeit** — if your opponent's move clock runs out, call `claimForfeit` to take the pot.
 
-- [Node (>= v20.18.3)](https://nodejs.org/en/download/)
-- Yarn ([v1](https://classic.yarnpkg.com/en/docs/install/) or [v2+](https://yarnpkg.com/getting-started/install))
-- [Git](https://git-scm.com/downloads)
+## Stack
 
-## Quickstart
+- Smart contract: Solidity 0.8.x, deployed via Foundry
+- Frontend: Next.js (App Router), Wagmi, Viem, RainbowKit, DaisyUI / Tailwind
+- Off-chain game logic: `chess.js` for chess rules, custom checkers engine
+- Static export hosted on IPFS via bgipfs
 
-To get started with Scaffold-ETH 2, follow the steps below:
+## Local development
 
-1. Install dependencies if it was skipped in CLI:
-
-```
-cd my-dapp-example
+```bash
 yarn install
+yarn start            # Next.js dev server at http://localhost:3000
 ```
 
-2. Run a local network in the first terminal:
-
-```
-yarn chain
-```
-
-This command starts a local Ethereum network using Foundry. The network runs on your local machine and can be used for testing and development. You can customize the network configuration in `packages/foundry/foundry.toml`.
-
-3. On a second terminal, deploy the test contract:
-
-```
-yarn deploy
-```
-
-This command deploys a test smart contract to the local network. The contract is located in `packages/foundry/contracts` and can be modified to suit your needs. The `yarn deploy` command uses the deploy script located in `packages/foundry/script` to deploy the contract to the network. You can also customize the deploy script.
-
-4. On a third terminal, start your NextJS app:
-
-```
-yarn start
-```
-
-Visit your app on: `http://localhost:3000`. You can interact with your smart contract using the `Debug Contracts` page. You can tweak the app config in `packages/nextjs/scaffold.config.ts`.
-
-Run smart contract test with `yarn foundry:test`
-
-- Edit your smart contracts in `packages/foundry/contracts`
-- Edit your frontend homepage at `packages/nextjs/app/page.tsx`. For guidance on [routing](https://nextjs.org/docs/app/building-your-application/routing/defining-routes) and configuring [pages/layouts](https://nextjs.org/docs/app/building-your-application/routing/pages-and-layouts) checkout the Next.js documentation.
-- Edit your deployment scripts in `packages/foundry/script`
-
-
-## Documentation
-
-Visit our [docs](https://docs.scaffoldeth.io) to learn how to start building with Scaffold-ETH 2.
-
-To know more about its features, check out our [website](https://scaffoldeth.io).
-
-## Contributing to Scaffold-ETH 2
-
-We welcome contributions to Scaffold-ETH 2!
-
-Please see [CONTRIBUTING.MD](https://github.com/scaffold-eth/scaffold-eth-2/blob/main/CONTRIBUTING.md) for more information and guidelines for contributing to Scaffold-ETH 2.
-## Known Issues
-
-The following are accepted limitations of this build. They are annotated with `/// @notice Known issue:` / `// Known issue:` comments in the relevant source files.
-
-- **Unbounded loops in view functions** — `openGames()`, `activeGames()`, and `playerGames()` iterate all games twice. Acceptable at small-to-medium scale; revisit with pagination if game count grows past a few thousand.
-- **Ownable instead of Ownable2Step** — A mistyped `transferOwnership` call has no acceptance handshake. The initial owner (client wallet) is set correctly in the constructor; only a future ownership change carries risk.
-- **No USD value next to CLAWD amounts** — CLAWD's USD price source isn't stable enough to show reliable paired dollar figures. Raw CLAWD amounts are displayed everywhere.
-- **Primary CTAs don't switch network automatically** — The Create Game and Join/Cancel buttons disable when disconnected but don't surface a Switch Network prompt. Users on the wrong chain see a wallet rejection when the transaction fires.
-- **Approval double-submit guard has no post-confirm cooldown** — The busy-flag approach is adequate since `refetchAllowance` is awaited before the flag clears.
-- **Chess/Checkers move validation is off-chain** — The contract records arbitrary string moves; a malicious peer can submit garbage. Recourse is to refuse co-signing a result and rely on the forfeit timer. Intentional product design.
-- **Signatures are not chain- or contract-scoped** — The EIP-191 digest omits `block.chainid` and `address(this)`. A co-signed result could theoretically be replayed on a second deployment with overlapping game IDs. Single production deployment makes this informational only.
-- **`currentTurn` not reset after settlement** — Retains the last player on the clock after a game completes. No functional impact; purely cosmetic if an indexer reads the field.
-- **MockCLAWD has permissionless `mint`** — Test-only contract; only deployed on non-Base chains. Not a production concern.
-- **Footer shows ETH price pill** — Harmless SE-2 template holdover; displays native currency (ETH) price, not CLAWD.
+The app targets Base mainnet by default. Edit `packages/nextjs/scaffold.config.ts` to change networks.

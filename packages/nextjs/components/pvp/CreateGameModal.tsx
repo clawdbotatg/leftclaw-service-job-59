@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
-import { useDeployedContractInfo, useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useAccount, useSwitchChain } from "wagmi";
+import {
+  useDeployedContractInfo,
+  useScaffoldReadContract,
+  useScaffoldWriteContract,
+  useTargetNetwork,
+} from "~~/hooks/scaffold-eth";
 import { CLAWD_DECIMALS, GameType, TIMEOUT_OPTIONS, WAGER_PRESETS } from "~~/utils/pvp";
+import { notification } from "~~/utils/scaffold-eth";
+import { getParsedErrorWithAllAbis } from "~~/utils/scaffold-eth/contract";
 
 type Props = {
   gameType: GameType;
@@ -12,13 +19,26 @@ type Props = {
   onCreated?: () => void;
 };
 
+const openMobileWallet = () => {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return;
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !(window as any).ethereum) {
+    setTimeout(() => window.open("metamask://", "_blank"), 2000);
+  }
+};
+
 export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) => {
-  const { address } = useAccount();
+  const { address, chain } = useAccount();
+  const { targetNetwork } = useTargetNetwork();
+  const { switchChain } = useSwitchChain();
+  const isCorrectNetwork = chain?.id === targetNetwork.id;
+
   const [wagerPreset, setWagerPreset] = useState<bigint>(WAGER_PRESETS[0].value);
   const [customWager, setCustomWager] = useState<string>("");
   const [useCustom, setUseCustom] = useState(false);
   const [timeoutSec, setTimeoutSec] = useState<bigint>(TIMEOUT_OPTIONS[2].seconds);
-  const [step, setStep] = useState<"idle" | "approving" | "creating">("idle");
+  const [creating, setCreating] = useState(false);
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [approveCooldown, setApproveCooldown] = useState(false);
 
   const wagerUnits: bigint = useCustom
     ? (() => {
@@ -55,44 +75,60 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
   const { writeContractAsync: writePvP } = useScaffoldWriteContract({ contractName: "PvPWager" });
 
   useEffect(() => {
-    if (!open) setStep("idle");
+    if (!open) {
+      setCreating(false);
+      setApprovalSubmitting(false);
+      setApproveCooldown(false);
+    }
   }, [open]);
 
   if (!open) return null;
 
   const needsApproval = ((allowance as bigint | undefined) ?? 0n) < wagerUnits;
   const hasBalance = ((balance as bigint | undefined) ?? 0n) >= wagerUnits;
-  const isBusy = step !== "idle";
+  const isApproveBusy = approvalSubmitting || approveCooldown;
+  const isAnyBusy = creating || isApproveBusy;
   const wagerLabel = useCustom
     ? `${customWager || "0"} CLAWD`
     : WAGER_PRESETS.find(p => p.value === wagerPreset)?.label;
 
-  // Known issue: Approval double-submit guard uses a single busy flag with no post-confirm cooldown. Practical risk is low since refetchAllowance is awaited before state clears.
   const handleApprove = async () => {
     if (!pvpAddress) return;
-    setStep("approving");
+    setApprovalSubmitting(true);
     try {
-      await writeClawd({
+      const promise = writeClawd({
         functionName: "approve",
         args: [pvpAddress, wagerUnits],
       });
+      openMobileWallet();
+      await promise;
+      setApprovalSubmitting(false);
+      setApproveCooldown(true);
       await refetchAllowance();
-    } finally {
-      setStep("idle");
+      setTimeout(() => setApproveCooldown(false), 4000);
+    } catch (e) {
+      setApprovalSubmitting(false);
+      const parsed = getParsedErrorWithAllAbis(e, targetNetwork.id as any);
+      notification.error(parsed);
     }
   };
 
   const handleCreate = async () => {
-    setStep("creating");
+    setCreating(true);
     try {
-      await writePvP({
+      const promise = writePvP({
         functionName: "createGame",
         args: [Number(gameType), wagerUnits, timeoutSec],
       });
+      openMobileWallet();
+      await promise;
       onCreated?.();
       onClose();
+    } catch (e) {
+      const parsed = getParsedErrorWithAllAbis(e, targetNetwork.id as any);
+      notification.error(parsed);
     } finally {
-      setStep("idle");
+      setCreating(false);
     }
   };
 
@@ -112,7 +148,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
               <button
                 type="button"
                 key={p.label}
-                disabled={isBusy}
+                disabled={isAnyBusy}
                 onClick={() => {
                   setUseCustom(false);
                   setWagerPreset(p.value);
@@ -129,7 +165,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
               className="checkbox checkbox-xs"
               checked={useCustom}
               onChange={e => setUseCustom(e.target.checked)}
-              disabled={isBusy}
+              disabled={isAnyBusy}
             />
             <span className="text-sm">Custom</span>
             <input
@@ -142,7 +178,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
                 setUseCustom(true);
                 setCustomWager(e.target.value.replace(/[^\d]/g, ""));
               }}
-              disabled={isBusy}
+              disabled={isAnyBusy}
             />
           </div>
         </div>
@@ -154,7 +190,7 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
               <button
                 type="button"
                 key={opt.label}
-                disabled={isBusy}
+                disabled={isAnyBusy}
                 onClick={() => setTimeoutSec(opt.seconds)}
                 className={`btn btn-sm ${timeoutSec === opt.seconds ? "btn-primary" : "btn-outline"}`}
               >
@@ -164,7 +200,6 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
           </div>
         </div>
 
-        {/* Known issue: No USD value displayed next to CLAWD amounts — CLAWD's USD price source isn't stable enough to show paired dollar figures. */}
         <div className="text-xs opacity-70 mb-4">
           Your wager: <span className="font-mono">{wagerLabel}</span>. Pot:{" "}
           {useCustom
@@ -177,30 +212,38 @@ export const CreateGameModal = ({ gameType, open, onClose, onCreated }: Props) =
           <div className="alert alert-warning text-xs mb-3 py-2">Not enough CLAWD balance for this wager.</div>
         )}
 
-        <div className="modal-action">
-          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={isBusy}>
+        <div className="modal-action flex flex-col gap-2 sm:flex-row sm:justify-end items-stretch">
+          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={isAnyBusy}>
             Cancel
           </button>
-          {needsApproval ? (
+          {address && !isCorrectNetwork ? (
+            <button
+              className="btn btn-warning btn-sm w-full sm:w-auto"
+              onClick={() => switchChain({ chainId: targetNetwork.id })}
+            >
+              Switch to {targetNetwork.name}
+            </button>
+          ) : needsApproval ? (
             <button
               className="btn btn-primary btn-sm"
               onClick={handleApprove}
-              disabled={isBusy || wagerUnits === 0n || !hasBalance}
+              disabled={isAnyBusy || wagerUnits === 0n || !hasBalance || !address}
             >
-              {step === "approving" && <span className="loading loading-spinner loading-xs" />} Approve CLAWD
+              {(approvalSubmitting || approveCooldown) && <span className="loading loading-spinner loading-xs" />}{" "}
+              Approve CLAWD
             </button>
           ) : (
             <button
               className="btn btn-primary btn-sm"
               onClick={handleCreate}
-              disabled={isBusy || wagerUnits === 0n || !hasBalance}
+              disabled={isAnyBusy || wagerUnits === 0n || !hasBalance || !address}
             >
-              {step === "creating" && <span className="loading loading-spinner loading-xs" />} Create Game
+              {creating && <span className="loading loading-spinner loading-xs" />} Create Game
             </button>
           )}
         </div>
       </div>
-      <div className="modal-backdrop bg-black/60" onClick={isBusy ? undefined : onClose} />
+      <div className="modal-backdrop bg-black/60" onClick={isAnyBusy ? undefined : onClose} />
     </div>
   );
 };

@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Address } from "@scaffold-ui/components";
 import { useAccount, useSignMessage } from "wagmi";
-import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import type { Game } from "~~/utils/pvp";
 import { resultInnerHash, truncateAddress } from "~~/utils/pvp";
+import { getParsedErrorWithAllAbis } from "~~/utils/scaffold-eth/contract";
 
 type Props = {
   game: Game;
@@ -20,6 +21,7 @@ export const ResultPanel = ({ game, sharedSigParam, onClearSharedSig, onSettled 
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const { writeContractAsync: writePvP } = useScaffoldWriteContract({ contractName: "PvPWager" });
+  const { targetNetwork } = useTargetNetwork();
 
   const [mySig, setMySig] = useState<`0x${string}` | null>(null);
   const [winner, setWinner] = useState<`0x${string}` | null>(null);
@@ -48,7 +50,7 @@ export const ResultPanel = ({ game, sharedSigParam, onClearSharedSig, onSettled 
       const url = `${window.location.origin}/game/${game.gameId.toString()}#${params.toString()}`;
       setShareUrl(url);
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "sign failed");
+      setErrorMsg(getParsedErrorWithAllAbis(e, targetNetwork.id as any));
     } finally {
       setStep("idle");
     }
@@ -81,7 +83,7 @@ export const ResultPanel = ({ game, sharedSigParam, onClearSharedSig, onSettled 
       onSettled?.();
       onClearSharedSig();
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "submit failed");
+      setErrorMsg(getParsedErrorWithAllAbis(e, targetNetwork.id as any));
     } finally {
       setStep("idle");
     }

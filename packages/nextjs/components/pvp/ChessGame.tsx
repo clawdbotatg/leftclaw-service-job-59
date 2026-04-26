@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
-import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { getParsedErrorWithAllAbis } from "~~/utils/scaffold-eth/contract";
 
 type Props = {
   gameId: bigint;
@@ -18,6 +19,7 @@ export const ChessGame = ({ gameId, moves, myColor, isMyTurn, disabled, onMoveSu
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const { writeContractAsync: writePvP } = useScaffoldWriteContract({ contractName: "PvPWager" });
+  const { targetNetwork } = useTargetNetwork();
 
   const chess = useMemo(() => {
     const c = new Chess();
@@ -41,7 +43,7 @@ export const ChessGame = ({ gameId, moves, myColor, isMyTurn, disabled, onMoveSu
       await writePvP({ functionName: "recordMove", args: [gameId, moveUci] });
       onMoveSubmitted?.();
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "submit failed");
+      setErrorMsg(getParsedErrorWithAllAbis(e, targetNetwork.id as any));
     } finally {
       setPending(false);
     }
